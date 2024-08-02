@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dépôtage des Camions</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .logo {
+            max-width: 100px;
+        }
+        .container {
+            background: #b1d182;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        .table-container {
+            margin-top: 20px;
+        }
+        .button-container button {
+            margin-right: 10px;
+        }
+        .description {
+            font-size: 1.2rem;
+            color: #333;
+        }
+        .thead-dark th {
+            background-color: #343a40;
+            color: #ffffff;
+        }
+        .animate__animated.animate__fadeIn {
+            animation-duration: 1s;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #004080;
+        }
+        .btn-success {
+            background-color: #28a745;
+            border-color: #28a745;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
+        .btn-info {
+            background-color: #17a2b8;
+            border-color: #17a2b8;
+        }
+        .btn-info:hover {
+            background-color: #138496;
+            border-color: #117a8b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5 animate__animated animate__fadeIn">
+        <div class="d-flex justify-content-center align-items-center mb-4">
+            <img src="ocp.jpg" alt="OCP Logo" class="logo mr-3">
+            <h1 class="text-center">Dépôtage des Camions</h1>
+        </div>
+        <div class="text-center mb-4">
+            <p class="description animate__animated animate__fadeIn">Bienvenue sur notre site de dépôtage des camions. Ce site est conçu pour faciliter la gestion des opérations de dépôtage des camions, vous permettant d'ajouter, suivre et gérer les informations relatives aux camions, ainsi que de gérer les horaires et les responsables des shifts.</p>
+        </div>
+
+        <div class="table-container">
+            <h2 class="mt-5">Dépôtage</h2>
+            <table id="stockTable" class="table table-striped table-bordered animate__animated animate__fadeIn">
+                <thead class="thead-dark">
+                    <tr>
+                        <th>Date</th>
+                        <th>N° Camion</th>
+                        <th>Matricule</th>
+                        <th>Poste</th>
+                        <th>Début</th>
+                        <th>Fin</th>
+                        <th>Point de Dépôtage</th>
+                        <th>Responsable Shift</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Les lignes de tableau seront ajoutées ici dynamiquement -->
+                </tbody>
+            </table>
+
+            <div class="button-container mt-4 text-center">
+                <button class="btn btn-primary animate__animated animate__pulse animate__infinite" onclick="addRow()"><i class="fas fa-plus"></i> Ajouter un produit</button>
+                <button class="btn btn-success" onclick="exportTableToExcel()"><i class="fas fa-file-excel"></i> Exporter en Excel</button>
+                <input type="file" id="fileInputExcel" class="form-control-file mt-2" accept=".xlsx, .xls" style="display: none;" onchange="importFromExcel(event)">
+                <button class="btn btn-info" onclick="document.getElementById('fileInputExcel').click();"><i class="fas fa-file-import"></i> Importer Excel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        var allData = [];
+
+        function addRow() {
+            var table = document.getElementById("stockTable").getElementsByTagName('tbody')[0];
+            var newRow = table.insertRow();
+            var rowData = ['', '', '', '', '', '', '', ''];
+            allData.push(rowData);
+            newRow.innerHTML = `
+                <tr>
+                    <td><input type="date" class="form-control" placeholder="Date" onchange="updateAllData(this)"></td>
+                    <td><input type="number" class="form-control" placeholder="N° Camion" onchange="updateAllData(this)"></td>
+                    <td><input type="text" class="form-control" placeholder="Matricule" onchange="updateAllData(this)"></td>
+                    <td>
+                        <select class="form-control" onchange="updateAllData(this)">
+                            <option value="">Sélectionner Poste</option>
+                            <option value="P1">P1</option>
+                            <option value="P2">P2</option>
+                            <option value="P3">P3</option>
+                        </select>
+                    </td>
+                    <td><input type="time" class="form-control" placeholder="Début" onchange="updateAllData(this)"></td>
+                    <td><input type="time" class="form-control" placeholder="Fin" onchange="updateAllData(this)"></td>
+                    <td>
+                        <select class="form-control" onchange="updateAllData(this)">
+                            <option value="">Sélectionner Point de Dépôtage</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                        </select>
+                    </td>
+                    <td><input type="text" class="form-control" placeholder="Responsable Shift" onchange="updateAllData(this)"></td>
+                </tr>`;
+        }
+
+        function updateAllData(element) {
+            var row = element.closest('tr');
+            var rowIndex = Array.from(row.parentNode.children).indexOf(row);
+            var columnIndex = Array.from(row.children).indexOf(element.parentElement);
+            allData[rowIndex][columnIndex] = element.value;
+        }
+
+        function exportTableToExcel() {
+            var wb = XLSX.utils.book_new();
+            var ws_data = [["Date", "N Camion", "Matricule", "Poste", "Début", "Fin", "Point de Dépôtage", "Responsable Shift"]];
+
+            allData.forEach(row => {
+                ws_data.push(row);
+            });
+
+            var ws = XLSX.utils.aoa_to_sheet(ws_data);
+            XLSX.utils.book_append_sheet(wb, ws, 'Dépôtage Data');
+            XLSX.writeFile(wb, 'Dépôtage.xlsx');
+        }
+
+        function importFromExcel(event) {
+            var input = event.target;
+            var reader = new FileReader();
+            reader.onload = function () {
+                var data = new Uint8Array(reader.result);
+                var workbook = XLSX.read(data, { type: 'array' });
+                var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                var jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: true });
+
+                var table = document.getElementById("stockTable").getElementsByTagName('tbody')[0];
+                table.innerHTML = ''; // Clear existing table data
+                allData = []; // Clear existing data
+
+                jsonData.forEach((row, index) => {
+                    if (index > 0) { // Ignore header
+                        var newRow = table.insertRow();
+                        var rowData = [];
+                        row.forEach((cell, cellIndex) => {
+                            var newCell = newRow.insertCell();
+                            var input = document.createElement("input");
+
+                            if (cellIndex === 4 || cellIndex === 5) {
+                                // Handle time input
+                                input.type = "time";
+                                if (typeof cell === 'string') {
+                                    input.value = cell; // If time is already in HH:MM format
+                                } else if (cell instanceof Date) {
+                                    input.value = cell.toISOString().substr(11, 5); // Extract time in HH:MM format
+                                } else {
+                                    input.value = formatTime(cell); // Handle Excel time format
+                                }
+                            } else if (cellIndex === 0) {
+                                // Handle date input
+                                input.type = "date";
+                                var date = new Date(cell);
+                                input.value = date.toISOString().split('T')[0]; // Format date
+                            } else {
+                                // Handle other inputs
+                                input.type = "text";
+                                input.value = cell;
+                                if (cellIndex === 3 || cellIndex === 6 || cellIndex === 7) {
+                                    input.readOnly = true; // Handle select fields
+                                }
+                            }
+
+                            input.className = "form-control";
+                            input.onchange = function() { updateAllData(this); };
+                            newCell.appendChild(input);
+                            rowData.push(cell);
+                        });
+                        allData.push(rowData);
+                    }
+                });
+            };
+            reader.readAsArrayBuffer(input.files[0]);
+        }
+
+        function formatTime(serial) {
+            if (serial instanceof Date) {
+                return serial.toISOString().substr(11, 5); // HH:MM format
+            }
+            var hours = Math.floor(serial * 24);
+            var minutes = Math.floor((serial * 24 - hours) * 60);
+            return (hours < 10 ? '0' : '') + hours + ':' + (minutes < 10 ? '0' : '') + minutes;
+        }
+    </script>
+</body>
+</html>
