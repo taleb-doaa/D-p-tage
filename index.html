@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <style>
         body {
             background-color: #f8f9fa;
@@ -24,6 +26,7 @@
         }
         .table-container {
             margin-top: 20px;
+            overflow-x: auto;
         }
         .button-container button {
             margin-right: 10px;
@@ -63,6 +66,21 @@
             background-color: #138496;
             border-color: #117a8b;
         }
+        table input, table select {
+            width: 100%;
+        }
+        .table thead th, .table tbody td {
+            white-space: nowrap;
+        }
+        .table th, .table td {
+            min-width: 120px;
+        }
+        #histogramContainer {
+            margin-top: 20px;
+        }
+        canvas {
+            max-width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -88,6 +106,8 @@
                         <th>Fin</th>
                         <th>Point de Dépôtage</th>
                         <th>Responsable Shift</th>
+                        <th>Provenance</th>
+                        <th>Durée (min)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -102,6 +122,39 @@
                 <button class="btn btn-info" onclick="document.getElementById('fileInputExcel').click();"><i class="fas fa-file-import"></i> Importer Excel</button>
             </div>
         </div>
+        <div class="container mt-5">
+            <!-- Ajout du formulaire pour la sélection des dates -->
+            <div class="date-selection text-center mb-4">
+                <h2>Sélectionner la période</h2>
+                <form id="dateForm">
+                    <div class="form-row">
+                        <div class="col-md-5 mb-3">
+                            <label for="startDate">Date de début</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="col-md-5 mb-3">
+                            <label for="endDate">Date de fin</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <button type="button" class="btn btn-primary mt-4" onclick="generateHistograms()">Générer les histogrammes</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="total-trucks">
+                <p><i><strong><u>Nombre total de camions :</u></strong></i> <span id="totalTrucksCount"></span></p>
+            </div>
+            
+        
+            <button class="btn btn-success" onclick="exportHistogramsToPDF()">Exporter les histogrammes en PDF</button>
+            <!-- Ajout des conteneurs pour les histogrammes -->
+            <div id="histogramContainer" class="mt-5">
+                <canvas id="totalTrucksChart"></canvas>
+                <canvas id="averageDurationPostChart" class="mt-4"></canvas>
+                <canvas id="averageDurationDepotChart" class="mt-4"></canvas>
+            </div>
+        </div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
@@ -109,12 +162,17 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        const dataChangedEvent = new Event('dataChanged');
+        document.getElementById('stockTable').addEventListener('dataChanged', generateHistograms);
+document.getElementById('startDate').addEventListener('change', generateHistograms);
+document.getElementById('endDate').addEventListener('change', generateHistograms);
+        
         var allData = [];
 
         function addRow() {
             var table = document.getElementById("stockTable").getElementsByTagName('tbody')[0];
             var newRow = table.insertRow();
-            var rowData = ['', '', '', '', '', '', '', ''];
+            var rowData = ['', '', '', '', '', '', '', '', '', ''];
             allData.push(rowData);
             newRow.innerHTML = `
                 <tr>
@@ -129,8 +187,8 @@
                             <option value="P3">P3</option>
                         </select>
                     </td>
-                    <td><input type="time" class="form-control" placeholder="Début" onchange="updateAllData(this)"></td>
-                    <td><input type="time" class="form-control" placeholder="Fin" onchange="updateAllData(this)"></td>
+                    <td><input type="time" class="form-control" placeholder="Début" onchange="calculateDuration(this)"></td>
+                    <td><input type="time" class="form-control" placeholder="Fin" onchange="calculateDuration(this)"></td>
                     <td>
                         <select class="form-control" onchange="updateAllData(this)">
                             <option value="">Sélectionner Point de Dépôtage</option>
@@ -139,19 +197,86 @@
                         </select>
                     </td>
                     <td><input type="text" class="form-control" placeholder="Responsable Shift" onchange="updateAllData(this)"></td>
-                </tr>`;
+                    <td><input type="text" class="form-control" placeholder="Provenance" onchange="updateAllData(this)"></td>
+                    <td><input type="number" class="form-control" placeholder="Durée (min)" readonly></td>
+                </tr>
+            `;
+            document.getElementById('stockTable').dispatchEvent(dataChangedEvent);
+        }
+        function exportHistogramsToPDF() {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const charts = ['totalTrucksChart', 'averageDurationPostChart', 'averageDurationDepotChart'];
+    const margins = 10;
+    const pageWidth = pdf.internal.pageSize.width;
+    const pageHeight = pdf.internal.pageSize.height;
+    const imageWidth = pageWidth - 2 * margins;
+    const imageHeight = (pageHeight - 4 * margins) / 3; // Diviser la page en 3 parties égales
+
+    function addChartToPDF(index) {
+        if (index >= charts.length) {
+            pdf.save('Histograms.pdf');
+            return;
         }
 
+        const chart = document.getElementById(charts[index]);
+        html2canvas(chart).then((canvas) => {
+            const imgData = canvas.toDataURL('image/png');
+            const yPosition = margins + index * (imageHeight + margins);
+
+            pdf.addImage(imgData, 'PNG', margins, yPosition, imageWidth, imageHeight);
+
+            addChartToPDF(index + 1);
+        });
+    }
+
+    addChartToPDF(0);
+}
+
         function updateAllData(element) {
-            var row = element.closest('tr');
-            var rowIndex = Array.from(row.parentNode.children).indexOf(row);
-            var columnIndex = Array.from(row.children).indexOf(element.parentElement);
-            allData[rowIndex][columnIndex] = element.value;
+            var row = element.parentNode.parentNode;
+            var rowIndex = row.rowIndex - 1;
+            var inputs = row.getElementsByTagName('input');
+            var selects = row.getElementsByTagName('select');
+            
+            allData[rowIndex] = [
+                inputs[0].value,
+                inputs[1].value,
+                inputs[2].value,
+                selects[0].value,
+                inputs[3].value,
+                inputs[4].value,
+                selects[1].value,
+                inputs[5].value,
+                inputs[6].value,
+                inputs[7].value
+            ];
+        }
+
+        function calculateDuration(element) {
+            var row = element.parentNode.parentNode;
+            var inputs = row.getElementsByTagName('input');
+            var startTime = inputs[3].value;
+            var endTime = inputs[4].value;
+
+            if (startTime && endTime) {
+                var start = new Date("1970-01-01T" + startTime + "Z");
+                var end = new Date("1970-01-01T" + endTime + "Z");
+                var diffMs = end - start;
+                var diffMins = Math.floor(diffMs / 60000);
+
+                if (diffMins < 0) {
+                    diffMins += 24 * 60;
+                }
+
+                inputs[7].value = diffMins;
+                updateAllData(inputs[7]);
+            }
         }
 
         function exportTableToExcel() {
             var wb = XLSX.utils.book_new();
-            var ws_data = [["Date", "N Camion", "Matricule", "Poste", "Début", "Fin", "Point de Dépôtage", "Responsable Shift"]];
+            var ws_data = [["Date", "N Camion", "Matricule", "Poste", "Début", "Fin", "Point de Dépôtage", "Responsable Shift","Provenance","Durée (min)"]];
 
             allData.forEach(row => {
                 ws_data.push(row);
@@ -165,68 +290,299 @@
         function importFromExcel(event) {
             var input = event.target;
             var reader = new FileReader();
-            reader.onload = function () {
+
+            reader.onload = function() {
                 var data = new Uint8Array(reader.result);
-                var workbook = XLSX.read(data, { type: 'array' });
+                var workbook = XLSX.read(data, {type: 'array'});
                 var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                var jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: true });
+                var jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
 
-                var table = document.getElementById("stockTable").getElementsByTagName('tbody')[0];
-                table.innerHTML = ''; // Clear existing table data
-                allData = []; // Clear existing data
+                var tableBody = document.getElementById("stockTable").getElementsByTagName('tbody')[0];
+                tableBody.innerHTML = "";
 
-                jsonData.forEach((row, index) => {
-                    if (index > 0) { // Ignore header
-                        var newRow = table.insertRow();
-                        var rowData = [];
-                        row.forEach((cell, cellIndex) => {
-                            var newCell = newRow.insertCell();
-                            var input = document.createElement("input");
+                for (var i = 1; i < jsonData.length; i++) {
+                    var row = jsonData[i];
+                    var newRow = tableBody.insertRow();
+                    newRow.innerHTML = `
+                        <tr>
+                            <td><input type="date" class="form-control" value="${row[0] || ''}" placeholder="Date" onchange="updateAllData(this)"></td>
+                            <td><input type="number" class="form-control" value="${row[1] || ''}" placeholder="N° Camion" onchange="updateAllData(this)"></td>
+                            <td><input type="text" class="form-control" value="${row[2] || ''}" placeholder="Matricule" onchange="updateAllData(this)"></td>
+                            <td>
+                                <select class="form-control" onchange="updateAllData(this)">
+                                    <option value="">Sélectionner Poste</option>
+                                    <option value="P1" ${row[3] === 'P1' ? 'selected' : ''}>P1</option>
+                                    <option value="P2" ${row[3] === 'P2' ? 'selected' : ''}>P2</option>
+                                    <option value="P3" ${row[3] === 'P3' ? 'selected' : ''}>P3</option>
+                                </select>
+                            </td>
+                            <td><input type="time" class="form-control" value="${row[4] || ''}" placeholder="Début" onchange="calculateDuration(this)"></td>
+                            <td><input type="time" class="form-control" value="${row[5] || ''}" placeholder="Fin" onchange="calculateDuration(this)"></td>
+                            <td>
+                                <select class="form-control" onchange="updateAllData(this)">
+                                    <option value="">Sélectionner Point de Dépôtage</option>
+                                    <option value="1" ${row[6] === '1' ? 'selected' : ''}>1</option>
+                                    <option value="2" ${row[6] === '2' ? 'selected' : ''}>2</option>
+                                </select>
+                            </td>
+                            <td><input type="text" class="form-control" value="${row[7] || ''}" placeholder="Responsable Shift" onchange="updateAllData(this)"></td>
+                            <td><input type="text" class="form-control" value="${row[8] || ''}" placeholder="Provenance" onchange="updateAllData(this)"></td>
+                            <td><input type="number" class="form-control" value="${row[9] || ''}" placeholder="Durée (min)" readonly></td>
+                        </tr>
+                    `;
 
-                            if (cellIndex === 4 || cellIndex === 5) {
-                                // Handle time input
-                                input.type = "time";
-                                if (typeof cell === 'string') {
-                                    input.value = cell; // If time is already in HH:MM format
-                                } else if (cell instanceof Date) {
-                                    input.value = cell.toISOString().substr(11, 5); // Extract time in HH:MM format
-                                } else {
-                                    input.value = formatTime(cell); // Handle Excel time format
-                                }
-                            } else if (cellIndex === 0) {
-                                // Handle date input
-                                input.type = "date";
-                                var date = new Date(cell);
-                                input.value = date.toISOString().split('T')[0]; // Format date
-                            } else {
-                                // Handle other inputs
-                                input.type = "text";
-                                input.value = cell;
-                                if (cellIndex === 3 || cellIndex === 6 || cellIndex === 7) {
-                                    input.readOnly = true; // Handle select fields
-                                }
-                            }
-
-                            input.className = "form-control";
-                            input.onchange = function() { updateAllData(this); };
-                            newCell.appendChild(input);
-                            rowData.push(cell);
-                        });
-                        allData.push(rowData);
-                    }
-                });
+                    allData.push([
+                        row[0] || '',
+                        row[1] || '',
+                        row[2] || '',
+                        row[3] || '',
+                        row[4] || '',
+                        row[5] || '',
+                        row[6] || '',
+                        row[7] || '',
+                        row[8] || '',
+                        row[9] || ''
+                    ]);
+                }
             };
+
             reader.readAsArrayBuffer(input.files[0]);
         }
 
-        function formatTime(serial) {
-            if (serial instanceof Date) {
-                return serial.toISOString().substr(11, 5); // HH:MM format
+        function generateHistograms() {
+    var startDate = document.getElementById('startDate').value;
+    var endDate = document.getElementById('endDate').value;
+    if (!startDate || !endDate) {
+        alert('Veuillez sélectionner une période.');
+        return;
+    }
+
+    var filteredData = allData.filter(row => {
+        var date = row[0];
+        return date >= startDate && date <= endDate;
+    });
+    var totalTrucks = filteredData.length;
+
+    // Display total trucks
+    document.getElementById("totalTrucksCount").textContent = totalTrucks;
+
+    updateHistograms(filteredData);
+}
+
+let totalTrucksChart, averageDurationPostChart, averageDurationDepotChart;
+
+function updateHistograms(data) {
+    // Détruire les graphiques existants s'ils existent
+    if (totalTrucksChart) totalTrucksChart.destroy();
+    if (averageDurationPostChart) averageDurationPostChart.destroy();
+    if (averageDurationDepotChart) averageDurationDepotChart.destroy();
+
+    var posteCounts = { P1: 0, P2: 0, P3: 0 };
+    var posteDurations = { P1: 0, P2: 0, P3: 0 };
+    var posteDepotCounts = { P1: { 1: 0, 2: 0 }, P2: { 1: 0, 2: 0 }, P3: { 1: 0, 2: 0 } };
+    var posteDepotDurations = { P1: { 1: 0, 2: 0 }, P2: { 1: 0, 2: 0 }, P3: { 1: 0, 2: 0 } };
+
+    data.forEach(row => {
+        var poste = row[3];
+        var duration = parseInt(row[9]);
+        var depot = row[6];
+        if (poste && duration) {
+            posteCounts[poste]++;
+            posteDurations[poste] += duration;
+            if (depot) {
+                posteDepotCounts[poste][depot]++;
+                posteDepotDurations[poste][depot] += duration;
             }
-            var hours = Math.floor(serial * 24);
-            var minutes = Math.floor((serial * 24 - hours) * 60);
-            return (hours < 10 ? '0' : '') + hours + ':' + (minutes < 10 ? '0' : '') + minutes;
         }
+    });
+
+    var posteLabels = Object.keys(posteCounts);
+    var totalTrucksData = posteLabels.map(poste => posteCounts[poste]);
+    var averageDurationPostData = posteLabels.map(poste => posteCounts[poste] ? posteDurations[poste] / posteCounts[poste] : 0);
+    var depotLabels = ['1', '2'];
+    var averageDurationDepotData = depotLabels.map(depot => {
+        return posteLabels.map(poste => posteDepotCounts[poste][depot] ? posteDepotDurations[poste][depot] / posteDepotCounts[poste][depot] : 0);
+    });
+
+    var totalTrucksCtx = document.getElementById('totalTrucksChart').getContext('2d');
+    var averageDurationPostCtx = document.getElementById('averageDurationPostChart').getContext('2d');
+    var averageDurationDepotCtx = document.getElementById('averageDurationDepotChart').getContext('2d');
+
+    totalTrucksChart = new Chart(totalTrucksCtx, {
+        type: 'bar',
+        data: {
+            labels: posteLabels,
+            datasets: [{
+                label: 'Nombre total de camions',
+                data: totalTrucksData,
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Nombre total de camions par poste'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    averageDurationPostChart = new Chart(averageDurationPostCtx, {
+        type: 'bar',
+        data: {
+            labels: posteLabels,
+            datasets: [{
+                label: 'Durée moyenne (min)',
+                data: averageDurationPostData,
+                backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Durée moyenne par poste'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    averageDurationDepotChart = new Chart(averageDurationDepotCtx, {
+        type: 'bar',
+        data: {
+            labels: posteLabels,
+            datasets: depotLabels.map((depot, i) => ({
+                label: `Point de Dépôtage ${depot}`,
+                data: averageDurationDepotData[i],
+                backgroundColor: i % 2 ? 'rgba(255, 159, 64, 0.2)' : 'rgba(54, 162, 235, 0.2)',
+                borderColor: i % 2 ? 'rgba(255, 159, 64, 1)' : 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }))
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Durée moyenne par point de dépôtage dans chaque poste'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+            new Chart(averageDurationPostCtx, {
+                type: 'bar',
+                data: {
+                    labels: posteLabels,
+                    datasets: [{
+                        label: 'Durée moyenne (min)',
+                        data: averageDurationPostData,
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Durée moyenne par poste'
+                    }
+                },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            new Chart(averageDurationDepotCtx, {
+                type: 'bar',
+                data: {
+                    labels: posteLabels,
+                    datasets: depotLabels.map((depot, i) => ({
+                        label: `Point de Dépôtage ${depot}`,
+                        data: averageDurationDepotData[i],
+                        backgroundColor: i % 2 ? 'rgba(255, 159, 64, 0.2)' : 'rgba(54, 162, 235, 0.2)',
+                        borderColor: i % 2 ? 'rgba(255, 159, 64, 1)' : 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }))
+                },
+                options: {
+                    responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Durée moyenne par point de dépôtage dans chaque poste'
+                    }
+                },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            function exportHistogramsToExcel() {
+    var wb = XLSX.utils.book_new();
+
+    // Exporter les données pour le premier histogramme (Total des camions par poste)
+    var totalTrucksData = [["Poste", "Nombre total de camions"]];
+    totalTrucksChart.data.labels.forEach((label, index) => {
+        totalTrucksData.push([label, totalTrucksChart.data.datasets[0].data[index]]);
+    });
+    var ws1 = XLSX.utils.aoa_to_sheet(totalTrucksData);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Total Camions par Poste');
+
+    // Exporter les données pour le deuxième histogramme (Durée moyenne par poste)
+    var averageDurationPostData = [["Poste", "Durée moyenne (min)"]];
+    averageDurationPostChart.data.labels.forEach((label, index) => {
+        averageDurationPostData.push([label, averageDurationPostChart.data.datasets[0].data[index]]);
+    });
+    var ws2 = XLSX.utils.aoa_to_sheet(averageDurationPostData);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Durée Moyenne par Poste');
+
+    // Exporter les données pour le troisième histogramme (Durée moyenne par point de dépôtage)
+    var averageDurationDepotData = [["Poste", "Point de Dépôtage 1", "Point de Dépôtage 2"]];
+    averageDurationDepotChart.data.labels.forEach((label, index) => {
+        averageDurationDepotData.push([
+            label,
+            averageDurationDepotChart.data.datasets[0].data[index],
+            averageDurationDepotChart.data.datasets[1].data[index]
+        ]);
+    });
+    var ws3 = XLSX.utils.aoa_to_sheet(averageDurationDepotData);
+    XLSX.utils.book_append_sheet(wb, ws3, 'Durée Moyenne par Point de Dépôtage');
+
+    // Exporter le fichier Excel
+    XLSX.writeFile(wb, 'Histograms.xlsx');
+}
+        
     </script>
 </body>
 </html>
